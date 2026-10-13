@@ -1,0 +1,64 @@
+fn eq(a, b, msg) { if a != b { error("FAIL " + msg + ": got " + repr(a) + ", want " + repr(b)) } }
+
+// regex basics
+let r = regex("[a-z]+@[a-z]+\\.com")
+eq(r.test("mail bob@site.com now"), true, "test")
+eq(r.match("x bob@site.com").text, "bob@site.com", "match text")
+eq(r.match("x bob@site.com").start, 2, "match start")
+eq(r.match("nothing"), nil, "no match")
+let d = regex("(\\d+)-(\\d+)")
+let m = d.match("tel 555-1234!")
+eq(m.groups, ["555", "1234"], "groups")
+eq(regex("a|b|c").find_all("xaybzc").len, 3, "alternation find_all")
+eq(regex("a{2,3}").match("aaaa").text, "aaa", "greedy counted")
+eq(regex("a{2,3}?").match("aaaa").text, "aa", "lazy counted")
+eq(regex("<.+?>").match("<a><b>").text, "<a>", "lazy plus")
+eq(regex("^abc$").test("abc"), true, "anchors")
+eq(regex("^abc$").test("xabc"), false, "anchors fail")
+eq(regex("\\bcat\\b").test("a cat sat"), true, "word boundary")
+eq(regex("\\bcat\\b").test("concat"), false, "word boundary fail")
+eq(regex("hello", "i").test("HeLLo"), true, "ignore case")
+eq(regex("[^0-9]+").match("abc123").text, "abc", "negated class")
+eq(regex("(a|b)*c").match("ababc").text, "ababc", "group star")
+eq(regex("x*").match("yyy").text, "", "empty match")
+eq(regex("(\\w+) (\\w+)").replace("hello world", "$2 $1"), "world hello", "replace refs")
+eq(regex(",").split("a,b,,c"), ["a", "b", "", "c"], "split")
+eq(regex("\\s+").replace("a   b \t c", " "), "a b c", "replace all")
+eq(regex("[\\x80-\\xff]+").match("abc\u0639\u0631").text, "\u0639\u0631", "utf8 bytes")
+eq(regex("\\w+").match("\u0639\u0631\u0628\u064a abc").text, "\u0639\u0631\u0628\u064a", "\\w covers utf8")
+let bad = pcall(fn() { return regex("(unclosed") })
+eq(bad[0], false, "invalid pattern errors")
+eq(pcall(fn() { return regex("*a") })[0], false, "nothing to repeat")
+// catastrophic pattern must terminate, not hang
+let t = regex("(a*)*b").test("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+eq(t, false, "pathological pattern terminates")
+
+// lexer generator
+let lx = lexer([
+  ["_", "[ \\t\\r\\n]+"],
+  ["_", "//[^\\n]*"],
+  ["NUM", "[0-9]+(\\.[0-9]+)?"],
+  ["IDENT", "[A-Za-z_\\x80-\\xff][A-Za-z0-9_\\x80-\\xff]*"],
+  ["STR", "\"[^\"]*\""],
+  ["EQEQ", "=="],
+  ["EQ", "="],
+  ["OP", "[-+*/(){},;<>]"]
+], {keywords: {let: "LET", if: "IF"}})
+let toks = lx.tokenize("let x = 42 // note\nif x == 3.5 { y }")
+let types = toks.map(fn(t) { return t.type })
+eq(types, ["LET", "IDENT", "EQ", "NUM", "IF", "IDENT", "EQEQ", "NUM", "OP", "IDENT", "OP", "EOF"], "token types")
+eq(toks[3].text, "42", "token text")
+eq(toks[4].line, 2, "line tracking")
+eq(toks[4].col, 1, "col tracking")
+eq(toks[7].text, "3.5", "float token")
+let ar = lx.tokenize("متغير = 1")
+eq(ar[0].type, "IDENT", "arabic identifier")
+eq(ar[0].text, "متغير", "arabic text")
+eq(ar[1].col, 7, "col counts characters, not bytes")
+eq(pcall(fn() { return lx.tokenize("x @ y") })[0], false, "lexer error")
+let lenient = lexer([["_", "\\s+"], ["W", "\\w+"]], {recover: true}).tokenize("ab ? cd")
+eq(lenient.map(fn(t) { return t.type }), ["W", "ERROR", "W", "EOF"], "recover mode")
+// longest match wins regardless of rule order
+let lm = lexer([["LT", "<"], ["LE", "<="]]).tokenize("<=")
+eq(lm[0].type, "LE", "maximal munch")
+print("regex/lexer ok")
