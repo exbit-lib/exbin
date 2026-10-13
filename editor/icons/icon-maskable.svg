@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="#12152E"/><g transform="translate(76.8 76.8) scale(.7)">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#262B5A"/>
+      <stop offset="1" stop-color="#12152E"/>
+    </linearGradient>
+    <linearGradient id="amber" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FFB000"/>
+      <stop offset="1" stop-color="#FF7A1A"/>
+    </linearGradient>
+  </defs>
+  <!-- hexagon badge -->
+  <polygon points="256,30 452,143 452,369 256,482 60,369 60,143"
+           fill="url(#bg)" stroke="url(#bg)" stroke-width="28" stroke-linejoin="round"/>
+  <polygon points="256,30 452,143 452,369 256,482 60,369 60,143"
+           fill="none" stroke="#2EE6D0" stroke-width="6" stroke-linejoin="round" opacity=".9"/>
+  <!-- E: spine -->
+  <rect x="136" y="142" width="46" height="228" rx="8" fill="#F4F6FF"/>
+  <!-- top bar: byte cells -->
+  <rect x="196" y="142" width="64" height="46" rx="8" fill="#F4F6FF"/>
+  <rect x="270" y="142" width="64" height="46" rx="8" fill="#2EE6D0"/>
+  <!-- bottom bar: byte cells -->
+  <rect x="196" y="324" width="64" height="46" rx="8" fill="#F4F6FF"/>
+  <rect x="270" y="324" width="64" height="46" rx="8" fill="#2EE6D0"/>
+  <!-- middle bar -> arrow (compile / emit) -->
+  <path d="M196 233 H306 L306 215 L378 256 L306 297 L306 279 H196 Z" fill="url(#amber)" stroke="url(#amber)" stroke-width="8" stroke-linejoin="round"/>
+</g></svg>
