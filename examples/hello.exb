@@ -1,0 +1,11 @@
+// EXBIN in thirty seconds.
+let name = "EXBIN"
+print("Hello from", name, EXBIN_VERSION)
+
+fn greet(who) { return "مرحبا يا " + who }
+print(greet("عالم"))
+
+let langs = [{n: "Lua", y: 1993}, {n: "EXBIN", y: 2026}, {n: "Python", y: 1991}]
+let by_year = langs.sort(fn(a, b) { return a.y - b.y })
+for l in by_year { print(format("%-8s %d", l.n, l.y)) }
+print("sum of squares:", list(range(1, 6)).map(fn(x) { return x * x }).sum())
