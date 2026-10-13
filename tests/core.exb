@@ -1,0 +1,135 @@
+// Core language semantics.
+fn eq(a, b, msg) {
+  if a != b { error("FAIL " + msg + ": got " + repr(a) + ", want " + repr(b)) }
+}
+
+// arithmetic & precedence
+eq(1 + 2 * 3, 7, "precedence")
+eq(2 ** 3 ** 2, 512, "pow right-assoc")
+eq(-2 ** 2, -4, "** binds tighter than unary minus")
+eq(10 % 3, 1, "mod")
+eq(7 / 2, 3.5, "div")
+eq(0xff, 255, "hex literal")
+eq(0b101, 5, "bin literal")
+eq(1_000, 1000, "underscore literal")
+eq(5 & 3, 1, "band")
+eq(5 | 3, 7, "bor")
+eq(5 ^ 3, 6, "bxor")
+eq(1 << 4, 16, "shl")
+eq(256 >> 4, 16, "shr")
+eq(~0, -1, "bnot")
+
+// logic
+eq(true and false, false, "and")
+eq(nil or "x", "x", "or returns operand")
+eq(not true, false, "not")
+eq(0 and 1, 1, "0 is truthy")
+
+// strings
+eq("a" + "b", "ab", "concat")
+eq("n=" + 5, "n=5", "concat number")
+eq("ab" * 3, "ababab", "repeat")
+eq("hello"[1], "e", "string index")
+eq("hello"[-1], "o", "negative index")
+eq("hello"[range(1, 3)], "el", "slice by range")
+eq("a\tb\n".len, 4, "escapes")
+eq("ع".len, 2, "unicode escape is utf8")
+eq("\x41", "A", "hex escape")
+
+// lists & maps
+let l = [1, 2, 3]
+l[0] = 10
+l[1] += 5
+eq(l, [10, 7, 3], "list assign")
+eq(l + [4], [10, 7, 3, 4], "list concat")
+eq([1, [2, 3]] == [1, [2, 3]], true, "deep equality")
+let m = {a: 1, "b c": 2, [1 + 1]: 3}
+m.a += 10
+eq(m.a, 11, "field compound assign")
+eq(m["b c"], 2, "string key")
+eq(m[2], 3, "computed key")
+eq(m.missing, nil, "missing key is nil")
+eq(m.len, 3, "map len property")
+m.delete("a")
+eq(m.has("a"), false, "delete/has")
+
+// control flow
+let sum = 0
+for i in range(1, 11) { sum += i }
+eq(sum, 55, "for range")
+let w = 0
+while true { w += 1  if w >= 5 { break } }
+eq(w, 5, "while/break")
+let odd = []
+for i in range(10) { if i % 2 == 0 { continue } odd.push(i) }
+eq(odd, [1, 3, 5, 7, 9], "continue")
+let chars = []
+for c in "héé" { chars.push(c) }
+eq(chars.len, 3, "string iteration is per UTF-8 char")
+let keys = []
+for k in {x: 1, y: 2} { keys.push(k) }
+eq(keys, ["x", "y"], "map iteration keeps insertion order")
+if false { error("no") } else if true { sum = 1 } else { error("no") }
+eq(sum, 1, "else if")
+
+// nested loops with break/continue and block locals
+let pairs = 0
+for i in range(5) {
+  let a = i * 2
+  for j in range(5) {
+    let b = j
+    if b > i { break }
+    if (a + b) % 2 == 1 { continue }
+    pairs += 1
+  }
+}
+eq(pairs, 9, "nested loops")
+
+// functions & closures
+fn add(a, b) { return a + b }
+eq(add(2, 3), 5, "call")
+fn make_counter() {
+  let n = 0
+  return {inc: fn() { n += 1  return n }, get: fn() { return n }}
+}
+let c1 = make_counter()
+let c2 = make_counter()
+c1.inc() c1.inc() c2.inc()
+eq(c1.get(), 2, "closure 1")
+eq(c2.get(), 1, "closure 2 independent")
+fn fact(n) { if n <= 1 { return 1 } return n * fact(n - 1) }
+eq(fact(10), 3628800, "recursion")
+
+// closures capture the variable, and survive their scope (loop capture)
+let fns = []
+for i in range(3) { fns.push(fn() { return i }) }
+eq([fns[0](), fns[1](), fns[2]()], [0, 1, 2], "fresh binding per iteration")
+fn outer() {
+  let x = 1
+  fn mid() {
+    fn inner() { x += 1  return x }
+    return inner
+  }
+  return mid()
+}
+let inner = outer()
+inner()
+eq(inner(), 3, "upvalue through two levels")
+
+// methods on builtins
+eq("a,b,c".split(",").join("-"), "a-b-c", "split/join")
+eq([3, 1, 2].sort(), [1, 2, 3], "sort")
+eq([3, 1, 2].sort(fn(a, b) { return b - a }), [3, 2, 1], "sort with comparator")
+eq([1, 2, 3].map(fn(x) { return x * x }), [1, 4, 9], "map")
+eq([1, 2, 3, 4].filter(fn(x) { return x % 2 == 0 }), [2, 4], "filter")
+eq([1, 2, 3].reduce(fn(a, b) { return a + b }, 0), 6, "reduce")
+eq("Hello".upper(), "HELLO", "upper")
+eq("  x ".trim(), "x", "trim")
+eq(len("abc"), 3, "len function")
+eq(str(1.5), "1.5", "number formatting")
+eq(str(100), "100", "integer formatting")
+eq(num("0x10"), 16, "num hex")
+eq(num("abc"), nil, "num fails to nil")
+eq(format("%5.2f|%-4d|%s", 3.14159, 7, "z"), " 3.14|7   |z", "format")
+
+print("core ok")
