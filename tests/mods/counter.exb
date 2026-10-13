@@ -1,0 +1,6 @@
+// A module with private state; loaded once and cached.
+let count = 0
+return {
+  next: fn() { count += 1  return count },
+  loaded_from: "mods/counter"
+}
