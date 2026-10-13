@@ -1,0 +1,88 @@
+// calc.exb — a complete little language (lexer + Pratt parser + evaluator)
+// in about 80 lines, built with EXBIN's own toolkit. Variables, functions,
+// assignment, Arabic identifiers.
+let pratt = require("../lib/pratt")
+
+let lx = lexer([
+  ["_", "[ \\t]+"],
+  ["NUM", "[0-9]+(\\.[0-9]+)?"],
+  ["IDENT", "[A-Za-z_\\x80-\\xff][A-Za-z0-9_\\x80-\\xff]*"],
+  ["**", "\\*\\*"], ["+", "\\+"], ["-", "-"], ["*", "\\*"], ["/", "/"], ["%", "%"],
+  ["(", "\\("], [")", "\\)"], [",", ","], ["=", "="]
+])
+
+let spec = {prefix: {}, infix: {}}
+spec.prefix["NUM"] = fn(p, t) { return {type: "num", value: num(t.text)} }
+spec.prefix["IDENT"] = fn(p, t) {
+  if p.match("(") {
+    return {type: "call", name: t.text, args: pratt.separated(p, ",", ")")}
+  }
+  return {type: "var", name: t.text}
+}
+spec.prefix["("] = fn(p, t) {
+  let e = p.parse(0)
+  p.expect(")", "expected ')'")
+  return e
+}
+spec.prefix["-"] = pratt.unary(30)
+spec.infix["="] = {prec: 1, fn: fn(p, left, t) {
+  if left.type != "var" { p.fail("cannot assign to this") }
+  return {type: "assign", name: left.name, value: p.parse(0)}
+}}
+spec.infix["+"] = pratt.binary(10, false)
+spec.infix["-"] = pratt.binary(10, false)
+spec.infix["*"] = pratt.binary(20, false)
+spec.infix["/"] = pratt.binary(20, false)
+spec.infix["%"] = pratt.binary(20, false)
+spec.infix["**"] = pratt.binary(40, true)
+
+let builtins = {sqrt: sqrt, max: max, min: min, abs: abs, floor: floor, sin: sin, cos: cos}
+
+fn evaluate(n, env) {
+  let t = n.type
+  if t == "num" { return n.value }
+  if t == "var" {
+    if not env.has(n.name) { error("undefined variable '" + n.name + "'") }
+    return env[n.name]
+  }
+  if t == "assign" {
+    let v = evaluate(n.value, env)
+    env[n.name] = v
+    return v
+  }
+  if t == "neg" or t == "unary" { return -evaluate(n.operand, env) }
+  if t == "call" {
+    let f = builtins[n.name]
+    if f == nil { error("unknown function '" + n.name + "'") }
+    return apply(f, n.args.map(fn(a) { return evaluate(a, env) }))
+  }
+  let a = evaluate(n.left, env)
+  let b = evaluate(n.right, env)
+  if n.op == "+" { return a + b }
+  if n.op == "-" { return a - b }
+  if n.op == "*" { return a * b }
+  if n.op == "/" {
+    if b == 0 { error("division by zero") }
+    return a / b
+  }
+  if n.op == "%" { return a % b }
+  return a ** b
+}
+
+fn calc(src, env) {
+  let p = pratt.parser(lx.tokenize(src), spec)
+  let ast = p.parse(0)
+  if not p.at_end() { p.fail("unexpected input") }
+  return evaluate(ast, env)
+}
+
+let env = {}
+let demo = ["1 + 2 * 3", "x = 10", "y = x ** 2 / 4", "sqrt(y) + max(1, 2, 3)",
+            "(1 + 2) * -3", "2 ** 3 ** 2", "عدد = 7", "عدد * 6", "1 / 0", "2 +", "foo(1)"]
+let lines = demo
+if args.len > 1 { lines = args.slice(1) }   // exbin calc.exb "1+2" "x = 3"
+for src in lines {
+  let r = pcall(fn() { return calc(src, env) })
+  if r[0] { print(format("%-26s => %s", src, str(r[1]))) }
+  else { print(format("%-26s !! %s", src, str(r[1]))) }
+}
