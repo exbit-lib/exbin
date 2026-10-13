@@ -2,7 +2,7 @@
 # One-time setup: repo Settings → Pages → Build and deployment → Source: "GitHub Actions".
 name: Deploy editor to GitHub Pages
 
-on:
+on: 
   push:
     branches: [main]
     paths: ['editor/**', '.github/workflows/pages.yml']
