@@ -1,0 +1,42 @@
+// pretty.exb — render any EXBIN value as an indented tree (handy for ASTs).
+fn tree(v, indent) {
+  if indent == nil { indent = 0 }
+  let pad = "  ".repeat(indent)
+  let t = type(v)
+  if t == "map" {
+    if v.len == 0 { return "{}" }
+    let out = "{\n"
+    for k in v.keys() {
+      out += pad + "  " + str(k) + ": " + tree(v[k], indent + 1) + "\n"
+    }
+    return out + pad + "}"
+  }
+  if t == "list" {
+    if v.len == 0 { return "[]" }
+    let out = "[\n"
+    for x in v { out += pad + "  " + tree(x, indent + 1) + "\n" }
+    return out + pad + "]"
+  }
+  return repr(v)
+}
+
+// One-line s-expression form: {type:"binary", ...} -> (binary + a b)
+fn sexpr(v) {
+  let t = type(v)
+  if t == "map" {
+    let parts = []
+    for k in v.keys() {
+      if k == "type" { continue }
+      parts.push(sexpr(v[k]))
+    }
+    let head = v.type
+    if head == nil { head = "map" }
+    let out = "(" + str(head)
+    if parts.len > 0 { out += " " + parts.join(" ") }
+    return out + ")"
+  }
+  if t == "list" { return "[" + v.map(sexpr).join(" ") + "]" }
+  return str(v)
+}
+
+return {tree: tree, sexpr: sexpr}
