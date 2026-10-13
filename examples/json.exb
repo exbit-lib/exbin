@@ -1,0 +1,147 @@
+// json.exb — a JSON parser and pretty-printer written in EXBIN, using the
+// regex-based lexer generator. Handles escapes, \uXXXX, nesting, Arabic text.
+let lx = lexer([
+  ["_", "\\s+"],
+  ["STR", "\"([^\"\\\\]|\\\\.)*\""],
+  ["NUM", "-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?"],
+  ["WORD", "[a-z]+"],
+  ["{", "\\{"], ["}", "\\}"], ["[", "\\["], ["]", "\\]"], [":", ":"], [",", ","]
+])
+
+let st = {toks: [], pos: 0}
+
+fn peek() { return st.toks[st.pos] }
+fn advance() {
+  let t = st.toks[st.pos]
+  st.pos += 1
+  return t
+}
+fn fail(msg) {
+  let t = peek()
+  error(format("JSON error at %d:%d: %s", t.line, t.col, msg))
+}
+fn expect(type) {
+  if peek().type != type { fail("expected '" + type + "' but found '" + peek().text + "'") }
+  return advance()
+}
+
+fn unescape(raw) {
+  let body = raw[range(1, raw.len - 1)]
+  let out = ""
+  let i = 0
+  while i < body.len {
+    let c = body[i]
+    if c != "\\" {
+      out += c
+      i += 1
+      continue
+    }
+    let e = body[i + 1]
+    i += 2
+    if e == "n" { out += "\n" }
+    else if e == "t" { out += "\t" }
+    else if e == "r" { out += "\r" }
+    else if e == "b" { out += "\b" }
+    else if e == "f" { out += "\f" }
+    else if e == "u" {
+      out += chr(num("0x" + body[range(i, i + 4)]))
+      i += 4
+    } else { out += e }
+  }
+  return out
+}
+
+fn parse_value() {
+  let t = advance()
+  if t.type == "STR" { return unescape(t.text) }
+  if t.type == "NUM" { return num(t.text) }
+  if t.type == "WORD" {
+    if t.text == "true" { return true }
+    if t.text == "false" { return false }
+    if t.text == "null" { return nil }
+    st.pos -= 1
+    fail("unknown word '" + t.text + "'")
+  }
+  if t.type == "[" {
+    let items = []
+    if st.toks[st.pos].type == "]" {
+      advance()
+      return items
+    }
+    while true {
+      items.push(parse_value())
+      if peek().type == "," {
+        advance()
+        continue
+      }
+      expect("]")
+      return items
+    }
+  }
+  if t.type == "{" {
+    let obj = {}
+    if peek().type == "}" {
+      advance()
+      return obj
+    }
+    while true {
+      let key = unescape(expect("STR").text)
+      expect(":")
+      obj[key] = parse_value()
+      if peek().type == "," {
+        advance()
+        continue
+      }
+      expect("}")
+      return obj
+    }
+  }
+  st.pos -= 1
+  fail("unexpected '" + t.text + "'")
+}
+
+fn parse_json(src) {
+  st.toks = lx.tokenize(src)
+  st.pos = 0
+  let v = parse_value()
+  if peek().type != "EOF" { fail("trailing data") }
+  return v
+}
+
+fn quote(s) {
+  let out = "\""
+  for c in s {
+    if c == "\"" { out += "\\\"" }
+    else if c == "\\" { out += "\\\\" }
+    else if c == "\n" { out += "\\n" }
+    else if c == "\t" { out += "\\t" }
+    else { out += c }
+  }
+  return out + "\""
+}
+
+fn stringify(v, indent, depth) {
+  let t = type(v)
+  if t == "nil" { return "null" }
+  if t == "string" { return quote(v) }
+  if t == "number" or t == "bool" { return str(v) }
+  let pad = "  ".repeat(depth + 1)
+  let end = "  ".repeat(depth)
+  if t == "list" {
+    if v.len == 0 { return "[]" }
+    let parts = v.map(fn(x) { return pad + stringify(x, indent, depth + 1) })
+    return "[\n" + parts.join(",\n") + "\n" + end + "]"
+  }
+  if v.len == 0 { return "{}" }
+  let parts = v.keys().map(fn(k) { return pad + quote(k) + ": " + stringify(v[k], indent, depth + 1) })
+  return "{\n" + parts.join(",\n") + "\n" + end + "}"
+}
+
+let sample = "{\"name\": \"EXBIN\", \"اسم\": \"لغة\", \"version\": 1.5e0,
+  \"tags\": [\"vm\", \"tools\", true, null], \"nested\": {\"a\": [1, 2, {\"b\": \"x\\ny\"}], \"u\": \"\\u0639\"}}"
+let doc = parse_json(sample)
+print(stringify(doc, 2, 0))
+print("keys:", doc.keys())
+print("round-trip equal:", parse_json(stringify(doc, 2, 0)) == doc)
+let bad = pcall(fn() { return parse_json("{\"a\": [1, 2,}") })
+print("error case:", bad[1])
