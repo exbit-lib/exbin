@@ -1,0 +1,61 @@
+fn eq(a, b, msg) { if a != b { error("FAIL " + msg + ": got " + repr(a) + ", want " + repr(b)) } }
+
+// f(a, b) = a * b + 1
+let a = asm("mulplus", 2)
+a.op("GET_LOCAL", 1).op("GET_LOCAL", 2).op("MUL")
+a.op("CONSTANT", 1).op("ADD").op("RETURN")
+let f = a.build()
+eq(f(6, 7), 43, "straight line function")
+
+// factorial with a loop: let r = 1; while n > 1 { r = r * n; n = n - 1 }; return r
+let b = asm("fact", 1)
+b.op("CONSTANT", 1)                      // slot 2 = r
+b.label("top")
+b.op("GET_LOCAL", 1).op("CONSTANT", 1).op("GREATER").op("JUMP_IF_FALSE", "done").op("POP")
+b.op("GET_LOCAL", 2).op("GET_LOCAL", 1).op("MUL").op("SET_LOCAL", 2).op("POP")
+b.op("GET_LOCAL", 1).op("CONSTANT", 1).op("SUB").op("SET_LOCAL", 1).op("POP")
+b.op("LOOP", "top")
+b.label("done")
+b.op("POP").op("GET_LOCAL", 2).op("RETURN")
+let fact = b.build()
+eq(fact(10), 3628800, "loop with labels")
+eq(fact(1), 1, "loop zero iterations")
+
+// calls to globals, string constants and method invocation
+let g = asm("greet", 1)
+g.op("CONSTANT", "hi ")
+g.op("GET_LOCAL", 1).op("INVOKE", "upper", 0)
+g.op("ADD").op("RETURN")
+eq(g.build()("bob"), "hi BOB", "INVOKE and constants")
+
+// closures: make_adder(n) returns fn(x) { return x + n }
+let inner = asm("adder", 1, 1)
+inner.op("GET_LOCAL", 1).op("GET_UPVALUE", 0).op("ADD").op("RETURN")
+let outer = asm("make_adder", 1)
+outer.op("CLOSURE", inner.build(), [[1, 1]]).op("RETURN")
+let add5 = outer.build()(5)
+eq(add5(10), 15, "closure with captured local")
+
+// lists built by BUILD_LIST
+let l = asm("lst", 0)
+l.op("CONSTANT", 1).op("CONSTANT", 2).op("CONSTANT", 3).op("BUILD_LIST", 3).op("RETURN")
+eq(l.build()(), [1, 2, 3], "BUILD_LIST")
+
+// the verifier rejects broken programs instead of crashing the VM
+fn rejects(build_fn, msg) {
+  let r = pcall(build_fn)
+  if r[0] { error("FAIL " + msg + ": verifier accepted bad code") }
+}
+rejects(fn() { return asm("bad").op("POP").op("RETURN").build() }, "stack underflow")
+rejects(fn() { return asm("bad").op("GET_LOCAL", 9).op("RETURN").build() }, "local slot out of range")
+rejects(fn() { return asm("bad").op("NIL").build() }, "missing RETURN")
+rejects(fn() { return asm("bad").op("JUMP", "nowhere").op("NIL").op("RETURN").build() }, "undefined label")
+rejects(fn() { return asm("bad").op("NIL").op("JUMP_IF_FALSE", "x").op("NIL").label("x").op("POP").op("RETURN").build() }, "inconsistent depth at merge")
+rejects(fn() { return asm("bad").op("GET_UPVALUE", 0).op("RETURN").build() }, "upvalue out of range")
+rejects(fn() { return asm("bad").op("NOPE") }, "unknown opcode")
+rejects(fn() { return asm("bad").op("CONSTANT") }, "missing operand")
+
+// disassembly mentions opcodes
+assert(disasm(f).has("MUL"), "disasm shows opcodes")
+assert(opcodes().has("RETURN"), "opcodes list")
+print("asm ok")
