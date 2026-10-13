@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<title>محرر EXBIN</title>
+<meta name="description" content="محرر أكواد للغة EXBIN يعمل بدون إنترنت على كل الأجهزة">
+<meta name="theme-color" content="#12152e">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header id="top">
+    <img class="logo" src="icons/icon.svg" alt="" width="30" height="30">
+    <strong class="brand">EXBIN</strong>
+    <span class="sp"></span>
+    <button id="btnRun" class="primary" title="تشغيل (Ctrl+Enter)"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M7 4.5v15l12-7.5z" fill="currentColor"/></svg><span>تشغيل</span></button>
+    <button id="btnStop" class="danger" hidden title="إيقاف"><svg viewBox="0 0 24 24" width="18" height="18"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg><span>إيقاف</span></button>
+    <button id="btnDisasm" title="عرض الـ bytecode">⚙<span class="hide-s"> bytecode</span></button>
+    <button id="btnMenu" aria-label="القائمة" aria-haspopup="true">⋮</button>
+  </header>
+
+  <div id="menu" hidden role="menu">
+    <button data-act="new">ملف جديد</button>
+    <button data-act="open">فتح ملف…</button>
+    <button data-act="save">تنزيل الملف الحالي</button>
+    <hr>
+    <div class="menu-title">أمثلة</div>
+    <div id="examples"></div>
+    <hr>
+    <div class="row"><span>حجم الخط</span><span><button data-act="fsMinus">A−</button><button data-act="fsPlus">A+</button></span></div>
+    <button data-act="theme">تبديل الوضع (فاتح / داكن)</button>
+    <button data-act="install" hidden>تثبيت التطبيق</button>
+    <button data-act="about">حول المحرر</button>
+  </div>
+
+  <nav id="tabs" aria-label="الملفات"><div id="tabList"></div><button id="btnAdd" aria-label="ملف جديد">+</button></nav>
+
+  <main id="split">
+    <section id="editorPane">
+      <div id="editor">
+        <pre id="gutter" aria-hidden="true"></pre>
+        <div id="codeWrap">
+          <pre id="hl" aria-hidden="true"></pre>
+          <textarea id="ta" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off" aria-label="محرر الكود"></textarea>
+        </div>
+      </div>
+      <div id="keys" aria-label="رموز سريعة"></div>
+    </section>
+    <div id="gutterBar" role="separator" aria-orientation="horizontal"></div>
+    <section id="outPane">
+      <div id="outHead">
+        <span id="outTitle">الناتج</span>
+        <span id="outMeta"></span>
+        <span class="sp"></span>
+        <button id="btnClear" title="مسح">مسح</button>
+      </div>
+      <div id="out" dir="auto" tabindex="0" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <footer id="status"><span id="pos">1:1</span><span id="count"></span><span class="sp"></span><span id="ver">…</span></footer>
+</div>
+
+<div id="toast" hidden></div>
+<dialog id="dlg"><form method="dialog"><div id="dlgBody"></div><menu><button value="ok" class="primary">حسناً</button></menu></form></dialog>
+<input type="file" id="fileIn" accept=".exb,.exbc,.txt,text/plain" multiple hidden>
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
