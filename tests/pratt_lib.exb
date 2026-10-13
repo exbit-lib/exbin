@@ -1,0 +1,80 @@
+fn eq(a, b, msg) { if a != b { error("FAIL " + msg + ": got " + repr(a) + ", want " + repr(b)) } }
+let pratt = require("pratt")
+let pretty = require("pretty")
+
+let lx = lexer([
+  ["_", "\\s+"], ["NUM", "[0-9]+(\\.[0-9]+)?"], ["IDENT", "[A-Za-z_]\\w*"],
+  ["POW", "\\*\\*"], ["OP", "[-+*/(),]"]
+])
+fn op_type(t) { return t }
+let spec = {
+  prefix: {
+    NUM: fn(p, t) { return {type: "num", value: num(t.text)} },
+    IDENT: fn(p, t) {
+      if p.check("OP") and p.peek().text == "(" {
+        p.next()
+        return {type: "call", name: t.text, args: pratt.separated(p, "OP", "OP")}
+      }
+      return {type: "var", name: t.text}
+    },
+    OP: fn(p, t) {
+      if t.text == "(" {
+        let e = p.parse(0)
+        let close = p.next()
+        if close.text != ")" { error("expected )") }
+        return e
+      }
+      if t.text == "-" { return {type: "neg", operand: p.parse(30)} }
+      error("unexpected " + t.text)
+    }
+  },
+  infix: {
+    OP: {prec: 0, fn: nil},
+    POW: pratt.binary(40, true)
+  }
+}
+// the OP token type covers several operators; dispatch on text with a custom table
+let ops = {"+": 10, "-": 10, "*": 20, "/": 20}
+spec.infix.OP = nil
+let toks_for = fn(src) { return lx.tokenize(src) }
+
+// re-tag operator tokens so each gets its own infix rule
+fn retag(toks) {
+  for t in toks {
+    if t.type == "OP" and ops[t.text] != nil { t.type = "BIN" + t.text }
+  }
+  return toks
+}
+spec.infix["BIN+"] = pratt.binary(10, false)
+spec.infix["BIN-"] = pratt.binary(10, false)
+spec.infix["BIN*"] = pratt.binary(20, false)
+spec.infix["BIN/"] = pratt.binary(20, false)
+spec.prefix["BIN-"] = fn(p, t) { return {type: "neg", operand: p.parse(30)} }
+
+fn parse(src) { return pratt.parser(retag(lx.tokenize(src)), spec).parse(0) }
+fn ev(n) {
+  if n.type == "num" { return n.value }
+  if n.type == "neg" { return -ev(n.operand) }
+  if n.type == "binary" {
+    let a = ev(n.left)
+    let b = ev(n.right)
+    if n.op == "+" { return a + b }
+    if n.op == "-" { return a - b }
+    if n.op == "*" { return a * b }
+    if n.op == "/" { return a / b }
+    if n.op == "**" { return a ** b }
+  }
+  error("cannot evaluate " + n.type)
+}
+eq(ev(parse("1 + 2 * 3")), 7, "precedence")
+eq(ev(parse("(1 + 2) * 3")), 9, "parens")
+eq(ev(parse("2 ** 3 ** 2")), 512, "right assoc")
+eq(ev(parse("10 - 4 - 3")), 3, "left assoc")
+eq(ev(parse("-2 * 3")), -6, "unary minus")
+eq(ev(parse("8 / 2 / 2")), 2, "division left assoc")
+let ast = parse("1 + 2")
+eq(pretty.sexpr(ast), "(binary + (num 1) (num 2))", "sexpr")
+let bad = pcall(fn() { return parse("1 + * 2") })
+eq(bad[0], false, "syntax error reported")
+assert(str(bad[1]).has("Parse error"), "message")
+print("pratt ok")
