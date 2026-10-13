@@ -1,0 +1,13 @@
+fn eq(a, b, msg) { if a != b { error("FAIL " + msg + ": got " + repr(a) + ", want " + repr(b)) } }
+let c1 = require("mods/counter")
+let c2 = require("mods/counter")
+c1.next()
+eq(c2.next(), 2, "module is cached and shared")
+let u = require("mods/uses_counter")
+eq(u.bump(), 3, "nested require resolves relative to the requiring file")
+let r = pcall(fn() { return require("mods/cycle_a") })
+eq(r[0], false, "cycle detected")
+assert(str(r[1]).has("circular"), "cycle message")
+let r2 = pcall(fn() { return require("mods/does_not_exist") })
+eq(r2[0], false, "missing module")
+print("modules ok")
