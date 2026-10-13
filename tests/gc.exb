@@ -1,0 +1,49 @@
+fn eq(a, b, msg) { if a != b { error("FAIL " + msg + ": got " + repr(a) + ", want " + repr(b)) } }
+
+// churn: lots of short-lived garbage while long-lived structures stay intact
+let keep = []
+for i in range(2000) {
+  let tmp = {id: i, name: "item" + str(i), tags: [i, i + 1, "t" + str(i)]}
+  if i % 100 == 0 { keep.push(tmp) }
+  let junk = "x" * 50 + str(i)
+}
+eq(keep.len, 20, "kept objects")
+eq(keep[7].name, "item700", "kept contents intact")
+eq(keep[19].tags[2], "t1900", "nested contents intact")
+
+// closures keep their captured variables alive across collections
+fn make(n) { let data = [n, n * 2]  return fn() { return data[1] } }
+let fs = []
+for i in range(300) { fs.push(make(i)) }
+for i in range(1000) { let g = [i] * 20 }
+eq(fs[150](), 300, "closure upvalue survives GC")
+
+// natives that call back (map/sort/filter) while the GC runs inside the callback
+let big = list(range(500)).map(fn(i) { return {k: i, s: "v" + str(i)} })
+eq(big.len, 500, "map result survives callbacks")
+eq(big[499].s, "v499", "map content")
+let sorted = big.sort(fn(a, b) { let waste = [a.k, b.k, "z" * 20]  return b.k - a.k })
+eq(sorted[0].k, 499, "sort with allocating comparator")
+let total = list(range(1000)).reduce(fn(acc, x) { let w = str(x) * 3  return acc + x }, 0)
+eq(total, 499500, "reduce accumulator survives")
+
+// maps with many keys, deletion and re-insertion
+let m = {}
+for i in range(3000) { m["k" + str(i)] = i }
+for i in range(0, 3000, 2) { m.delete("k" + str(i)) }
+eq(m.len, 1500, "map count after deletes")
+eq(m["k2999"], 2999, "map lookup after deletes")
+eq(m["k2998"], nil, "deleted key gone")
+for i in range(0, 3000, 2) { m["k" + str(i)] = -i }
+eq(m.len, 3000, "re-insert")
+eq(m["k10"], -10, "re-inserted value")
+
+// long string building
+let s = ""
+for i in range(2000) { s += "ab" }
+eq(s.len, 4000, "string build")
+
+// deep recursion allocating at every level
+fn build(n) { if n == 0 { return [] } let l = build(n - 1)  l.push(str(n))  return l }
+eq(build(400).len, 400, "recursive allocation")
+print("gc ok")
