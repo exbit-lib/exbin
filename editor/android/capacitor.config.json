@@ -1,0 +1,6 @@
+{
+  "appId": "dev.exbin.editor",
+  "appName": "EXBIN",
+  "webDir": "..",
+  "android": { "backgroundColor": "#12152e" }
+}
