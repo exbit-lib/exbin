@@ -1,0 +1,168 @@
+// tinylang.exb — "Tiny": a small imperative language that COMPILES TO EXBIN
+// BYTECODE with the asm toolkit, runs on the VM, and is saved as a .exbc file.
+//
+//   let n = 10          while cond { ... }        if cond { ... }
+//   x = expr            print expr
+let pratt = require("../lib/pratt")
+
+let lx = lexer([
+  ["_", "\\s+"], ["_", "#[^\\n]*"],
+  ["NUM", "[0-9]+(\\.[0-9]+)?"],
+  ["STR", "\"[^\"]*\""],
+  ["IDENT", "[A-Za-z_\\x80-\\xff][A-Za-z0-9_\\x80-\\xff]*"],
+  ["==", "=="], ["!=", "!="], ["<=", "<="], [">=", ">="],
+  ["<", "<"], [">", ">"], ["=", "="],
+  ["+", "\\+"], ["-", "-"], ["*", "\\*"], ["/", "/"], ["%", "%"],
+  ["(", "\\("], [")", "\\)"], ["{", "\\{"], ["}", "\\}"]
+], {keywords: {let: "let", print: "print", while: "while", if: "if"}})
+
+// ---- parser: expressions via Pratt, statements by recursive descent --------
+let spec = {prefix: {}, infix: {}}
+spec.prefix["NUM"] = fn(p, t) { return {type: "num", value: num(t.text)} }
+spec.prefix["STR"] = fn(p, t) { return {type: "str", value: t.text[range(1, t.text.len - 1)]} }
+spec.prefix["IDENT"] = fn(p, t) { return {type: "var", name: t.text} }
+spec.prefix["("] = fn(p, t) {
+  let e = p.parse(0)
+  p.expect(")", nil)
+  return e
+}
+spec.prefix["-"] = pratt.unary(30)
+for op in ["==", "!="] { spec.infix[op] = pratt.binary(5, false) }
+for op in ["<", ">", "<=", ">="] { spec.infix[op] = pratt.binary(6, false) }
+for op in ["+", "-"] { spec.infix[op] = pratt.binary(10, false) }
+for op in ["*", "/", "%"] { spec.infix[op] = pratt.binary(20, false) }
+
+fn parse_block(p) {
+  let stmts = []
+  while not p.check("}") and not p.at_end() { stmts.push(parse_stmt(p)) }
+  p.expect("}", nil)
+  return stmts
+}
+
+fn parse_stmt(p) {
+  if p.match("let") {
+    let name = p.expect("IDENT", "expected a name").text
+    p.expect("=", nil)
+    return {type: "let", name: name, value: p.parse(0)}
+  }
+  if p.match("print") { return {type: "print", value: p.parse(0)} }
+  if p.match("while") {
+    let cond = p.parse(0)
+    p.expect("{", nil)
+    return {type: "while", cond: cond, body: parse_block(p)}
+  }
+  if p.match("if") {
+    let cond = p.parse(0)
+    p.expect("{", nil)
+    return {type: "if", cond: cond, body: parse_block(p)}
+  }
+  let name = p.expect("IDENT", "expected a statement").text
+  p.expect("=", nil)
+  return {type: "set", name: name, value: p.parse(0)}
+}
+
+fn parse(src) {
+  let p = pratt.parser(lx.tokenize(src), spec)
+  let stmts = []
+  while not p.at_end() { stmts.push(parse_stmt(p)) }
+  return stmts
+}
+
+// ---- code generator: AST -> EXBIN bytecode ----------------------------------
+let BINOPS = {"+": "ADD", "-": "SUB", "*": "MUL", "/": "DIV", "%": "MOD", "<": "LESS",
+              "<=": "LESS_EQUAL", ">": "GREATER", ">=": "GREATER_EQUAL", "==": "EQUAL", "!=": "NOT_EQUAL"}
+let labels = {n: 0}
+fn fresh(prefix) {
+  labels.n += 1
+  return prefix + str(labels.n)
+}
+
+fn gen_expr(a, n) {
+  let t = n.type
+  if t == "num" or t == "str" { a.op("CONSTANT", n.value) }
+  else if t == "var" { a.op("GET_GLOBAL", n.name) }
+  else if t == "neg" or t == "unary" {
+    gen_expr(a, n.operand)
+    a.op("NEG")
+  } else {
+    gen_expr(a, n.left)
+    gen_expr(a, n.right)
+    a.op(BINOPS[n.op])
+  }
+}
+
+fn gen_stmts(a, stmts) {
+  for s in stmts { gen_stmt(a, s) }
+}
+
+fn gen_stmt(a, s) {
+  let t = s.type
+  if t == "let" {
+    gen_expr(a, s.value)
+    a.op("DEFINE_GLOBAL", s.name)
+  } else if t == "set" {
+    gen_expr(a, s.value)
+    a.op("SET_GLOBAL", s.name)
+    a.op("POP")
+  } else if t == "print" {
+    a.op("GET_GLOBAL", "print")
+    gen_expr(a, s.value)
+    a.op("CALL", 1)
+    a.op("POP")
+  } else if t == "while" {
+    let top = fresh("top")
+    let done = fresh("done")
+    a.label(top)
+    gen_expr(a, s.cond)
+    a.op("JUMP_IF_FALSE", done)
+    a.op("POP")
+    gen_stmts(a, s.body)
+    a.op("LOOP", top)
+    a.label(done)
+    a.op("POP")
+  } else if t == "if" {
+    let other = fresh("else")
+    let end = fresh("end")
+    gen_expr(a, s.cond)
+    a.op("JUMP_IF_FALSE", other)
+    a.op("POP")
+    gen_stmts(a, s.body)
+    a.op("JUMP", end)
+    a.label(other)
+    a.op("POP")
+    a.label(end)
+  }
+}
+
+fn compile_tiny(src) {
+  let a = asm("<tiny>", 0)
+  gen_stmts(a, parse(src))
+  a.op("NIL").op("RETURN")
+  return a.build()
+}
+
+// ---- demo --------------------------------------------------------------------
+let program = "
+# Fibonacci, then a little arithmetic
+let n = 10
+let a = 0
+let b = 1
+while n > 0 {
+  print a
+  let t = a + b
+  a = b
+  b = t
+  n = n - 1
+}
+if a > 50 { print \"a is big\" }
+let ناتج = (2 + 3) * 4 - 10 / 4
+print ناتج
+"
+
+let main = compile_tiny(program)
+print("compiled:", fn_info(main).code_size, "bytes of bytecode")
+main()
+
+save_bytecode(main, "/tmp/tiny.exbc")
+print("--- reloaded from /tmp/tiny.exbc ---")
+load_bytecode("/tmp/tiny.exbc")()
