@@ -1,0 +1,44 @@
+fn eq(a, b, msg) { if a != b { error("FAIL " + msg + ": got " + repr(a) + ", want " + repr(b)) } }
+fn fails(f, needle, msg) {
+  let r = pcall(f)
+  if r[0] { error("FAIL " + msg + ": expected an error") }
+  if not str(r[1]).has(needle) { error("FAIL " + msg + ": error was " + repr(r[1])) }
+}
+
+fails(fn() { return 1 + nil }, "Cannot add", "add nil")
+fails(fn() { return [1][5] }, "out of range", "list oob")
+fails(fn() { return undefined_thing }, "Undefined variable", "undefined global")
+fails(fn() { return 1() }, "Can only call", "call number")
+fails(fn() { return "a" - 1 }, "must be numbers", "sub string")
+fails(fn() { let f = fn(a) { return a }  return f() }, "expects 1 argument", "arity")
+fails(fn() { return len(5) }, "len", "native arg type")
+fails(fn() { return {}.nope.deeper }, "Cannot read property", "field of nil")
+fails(fn() { error("boom") }, "boom", "error()")
+fails(fn() { assert(1 == 2, "math") }, "Assertion failed: math", "assert")
+fails(fn() { let m = {}  m[nil] = 1 }, "nil", "nil key")
+fails(fn() { return "x" < 1 }, "Cannot compare", "compare mismatch")
+fails(fn() { return [1, 2].sort(fn(a, b) { error("cmp") }) }, "cmp", "error inside sort callback")
+fails(fn() { fn r() { return r() }  return r() }, "Stack overflow", "infinite recursion")
+
+// error values can be any value
+let r = pcall(fn() { error({code: 42}) })
+eq(r[1].code, 42, "structured error")
+
+// pcall returns the value on success, and the VM stays healthy after errors
+eq(pcall(fn(a, b) { return a + b }, 2, 3), [true, 5], "pcall ok")
+for i in range(200) { pcall(fn() { return nil + 1 }) }
+eq(1 + 1, 2, "still healthy")
+
+// errors unwind through natives that call back (map -> fn -> error)
+let r2 = pcall(fn() { return [1, 2, 3].map(fn(x) { if x == 2 { error("two") } return x }) })
+eq(r2[0], false, "callback error propagates")
+
+// compile errors are reported, not crashes
+let r3 = pcall(fn() { return compile("let = 5") })
+eq(r3[0], false, "compile error caught")
+assert(str(r3[1]).has("Error"), "compile message")
+let r4 = pcall(fn() { return compile("fn f( {") })
+eq(r4[0], false, "compile error 2")
+let r5 = pcall(fn() { return compile("break") })
+eq(r5[0], false, "break outside loop")
+print("errors ok")
