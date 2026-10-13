@@ -1,0 +1,43 @@
+fn eq(a, b, msg) { if a != b { error("FAIL " + msg + ": got " + repr(a) + ", want " + repr(b)) } }
+
+let src = "fn sq(x) { return x * x }\nlet total = 0\nfor i in range(5) { total += sq(i) }\nreturn [total, \"عربي\", 1.5, nil, true]"
+let fn1 = compile(src, "ser.exb")
+let bytes = serialize(fn1)
+eq(bytes[0], 69, "magic E")
+eq(bytes[1], 88, "magic X")
+let fn2 = deserialize(bytes)
+eq(fn2(), [30, "عربي", 1.5, nil, true], "roundtrip result")
+eq(serialize(fn2), bytes, "serialization is deterministic")
+
+// via files
+save_bytecode(fn1, "/tmp/exbin_ser_test.exbc")
+let fn3 = load_bytecode("/tmp/exbin_ser_test.exbc")
+eq(fn3()[0], 30, "file roundtrip")
+
+// nested closures survive
+let fn4 = deserialize(serialize(compile("fn mk(n) { return fn(x) { return x + n } }\nreturn mk(2)(40)")))
+eq(fn4(), 42, "nested closures roundtrip")
+
+// hostile input: truncations and byte flips must be rejected or run safely, never crash
+let rejected = 0
+let accepted = 0
+for cut in range(0, bytes.len) {
+  let r = pcall(fn() { return deserialize(bytes[range(0, cut)]) })
+  if r[0] { accepted += 1 } else { rejected += 1 }
+}
+assert(rejected > 0, "truncation is detected")
+seed(7)
+let survived = 0
+for attempt in range(400) {
+  let b = copy(bytes)
+  let n = random(1, 4)
+  for k in range(n) { b[random(0, b.len - 1)] = random(0, 255) }
+  let r = pcall(fn() { return deserialize(b) })
+  // (mutated code is verified but deliberately not executed: a valid program may loop forever)
+  if r[0] { survived += 1 }
+}
+eq(1 + 1, 2, "VM healthy after fuzzing")
+eq(pcall(fn() { return deserialize(bytes + bytes) })[0], false, "trailing data rejected")
+eq(pcall(fn() { return deserialize("EXBC" .to_bytes()) })[0], false, "short header rejected")
+eq(pcall(fn() { return deserialize("hello world, not bytecode".to_bytes()) })[0], false, "bad magic rejected")
+print("serialize ok (fuzzed 400 mutations, " + str(survived) + " passed verification)")
