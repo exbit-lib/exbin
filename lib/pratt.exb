@@ -1,0 +1,103 @@
+// pratt.exb — a Pratt (top-down operator precedence) parser toolkit.
+//
+//   let pratt = require("pratt")
+//   let spec = {
+//     prefix: { NUM: fn(p, t) { return {type: "num", value: num(t.text)} } },
+//     infix:  { PLUS: pratt.binary(10, false) }
+//   }
+//   let ast = pratt.parser(lexer.tokenize(src), spec).parse(0)
+//
+// prefix rules  : fn(p, token)        -> node
+// infix rules   : {prec: n, fn: fn(p, left, token) -> node}
+// Tokens are looked up by their `type`; name operator rules after the operator
+// itself (lexer rule ["+", "\\+"]) and the spec tables read naturally.
+// The parser object `p` offers: peek() next() check(type) match(type)
+// expect(type, msg) parse(prec) at_end() and fail(msg).
+
+fn parser(tokens, spec) {
+  let st = {pos: 0}
+  let p = {}
+
+  p.peek = fn() { return tokens[st.pos] }
+  p.at_end = fn() { return tokens[st.pos].type == "EOF" }
+  p.next = fn() {
+    let t = tokens[st.pos]
+    if t.type != "EOF" { st.pos += 1 }
+    return t
+  }
+  p.check = fn(type) { return tokens[st.pos].type == type }
+  p.match = fn(type) {
+    if tokens[st.pos].type == type {
+      st.pos += 1
+      return true
+    }
+    return false
+  }
+  p.fail = fn(msg) {
+    let t = tokens[st.pos]
+    let near = t.text
+    if t.type == "EOF" { near = "end of input" }
+    error(format("Parse error at %d:%d: %s (near '%s')", t.line, t.col, msg, near))
+  }
+  p.expect = fn(type, msg) {
+    if tokens[st.pos].type == type {
+      return p.next()
+    }
+    if msg == nil { msg = "expected " + type }
+    p.fail(msg)
+  }
+  p.parse = fn(prec) {
+    let t = p.next()
+    let pre = spec.prefix[t.type]
+    if pre == nil {
+      st.pos -= 1
+      p.fail("unexpected token " + t.type)
+    }
+    let left = pre(p, t)
+    while true {
+      let nt = tokens[st.pos]
+      let rule = spec.infix[nt.type]
+      if rule == nil { break }
+      if rule.prec <= prec { break }
+      p.next()
+      left = rule.fn(p, left, nt)
+    }
+    return left
+  }
+  return p
+}
+
+// Ready-made rule builders ---------------------------------------------------
+
+fn binary(prec, right_assoc) {
+  return {prec: prec, fn: fn(p, left, t) {
+    let rbp = prec
+    if right_assoc { rbp = prec - 1 }
+    return {type: "binary", op: t.text, left: left, right: p.parse(rbp)}
+  }}
+}
+
+fn postfix(prec) {
+  return {prec: prec, fn: fn(p, left, t) {
+    return {type: "postfix", op: t.text, operand: left}
+  }}
+}
+
+fn unary(prec) {
+  return fn(p, t) { return {type: "unary", op: t.text, operand: p.parse(prec)} }
+}
+
+// Repeatedly parse items separated by `sep` until `close` (consumed).
+fn separated(p, sep, close) {
+  let items = []
+  if p.match(close) { return items }
+  while true {
+    items.push(p.parse(0))
+    if p.match(sep) { continue }
+    p.expect(close, nil)
+    break
+  }
+  return items
+}
+
+return {parser: parser, binary: binary, postfix: postfix, unary: unary, separated: separated}
