@@ -1,6 +1,6 @@
 // Offline cache. Bump VERSION when you change any file.
-const VERSION = 'exbin-editor-v1';
-const FILES = ['./', 'index.html', 'style.css', 'app.js', 'worker.js', 'data.js', 'exbin.wasm', 'manifest.webmanifest',
+const VERSION = 'exbin-editor-v2';
+const FILES = ['./', 'index.html', 'style.css', 'app.js', 'lang.js', 'find.js', 'complete.js', 'ui.js', 'worker.js', 'data.js', 'exbin.wasm', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(VERSION).then((c) => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => {
