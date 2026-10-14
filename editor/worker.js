@@ -1,13 +1,16 @@
 /* EXBIN runtime worker: runs the WebAssembly VM off the UI thread so that
    "Stop" can simply terminate it, and gives it a tiny in-memory file system
    (so require(), read_file() and write_file() work). */
-importScripts('data.js');
+if (typeof importScripts === 'function' && !self.EXB_DATA) importScripts('data.js');
 
 const dec = new TextDecoder(), enc = new TextEncoder();
 let modPromise = null;
 function getModule() {
   if (!modPromise) {
-    modPromise = fetch('exbin.wasm').then((r) => r.arrayBuffer()).then((b) => WebAssembly.compile(b));
+    // Standalone mode (opened from file://): the wasm is embedded as base64 by tools/build-inline.mjs.
+    modPromise = (self.EXB_WASM_B64
+      ? Promise.resolve(Uint8Array.from(atob(self.EXB_WASM_B64), (c) => c.charCodeAt(0)))
+      : fetch('exbin.wasm').then((r) => r.arrayBuffer())).then((b) => WebAssembly.compile(b));
   }
   return modPromise;
 }
@@ -21,7 +24,8 @@ function normPath(p) {
   return '/' + out.join('/');
 }
 
-function makeRuntime(userFiles) {
+function makeRuntime(userFiles, stdinText) {
+  const stdin = enc.encode(stdinText || ''); let stdinPos = 0;
   const fs = new Map(); // path -> {d: Uint8Array, n: length}
   const put = (p, text) => { const d = enc.encode(text); fs.set(normPath(p), { d, n: d.length }); };
   for (const [k, v] of Object.entries(self.EXB_DATA.lib)) put('/lib/' + k, v);
@@ -68,7 +72,15 @@ function makeRuntime(userFiles) {
           o.pos += c; total += c;
           if (c < len) break;
         }
-      } else if (fd !== 0) return E_BADF;
+      } else if (fd === 0) {
+        for (let i = 0; i < n; i++) {
+          const buf = v.getUint32(iovs + i * 8, true), len = v.getUint32(iovs + i * 8 + 4, true);
+          const c = Math.max(0, Math.min(len, stdin.length - stdinPos));
+          u8().set(stdin.subarray(stdinPos, stdinPos + c), buf);
+          stdinPos += c; total += c;
+          if (c < len) break;
+        }
+      } else return E_BADF;
       v.setUint32(outp, total, true); return 0;
     },
     fd_seek: (fd, off, whence, outp) => {
@@ -119,7 +131,7 @@ function makeRuntime(userFiles) {
 async function run(msg) {
   const t0 = performance.now();
   const mod = await getModule();
-  const rt = makeRuntime(msg.files);
+  const rt = makeRuntime(msg.files, msg.stdin);
   const inst = await WebAssembly.instantiate(mod, { wasi_snapshot_preview1: rt.wasi });
   const x = inst.exports;
   rt.setMem(x.memory);
@@ -129,7 +141,7 @@ async function run(msg) {
   new Uint8Array(x.memory.buffer)[ptr + bytes.length] = 0;
   let status = 0, exit = null;
   try {
-    status = msg.cmd === 'disasm' ? x.exb_disasm(ptr) : x.exb_run(ptr);
+    status = (msg.cmd === 'disasm' || msg.cmd === 'check') ? x.exb_disasm(ptr) : x.exb_run(ptr);
   } catch (e) {
     if (e && e.exitCode !== undefined) exit = e.exitCode; else throw e;
   }
@@ -146,7 +158,7 @@ self.onmessage = async (e) => {
       return;
     }
     const r = await run(m);
-    self.postMessage({ id: m.id, ...r });
+    self.postMessage({ id: m.id, cmd: m.cmd, ...r });
   } catch (err) {
     self.postMessage({ id: m.id, status: 3, out: 'Internal error: ' + (err && err.message || err), ms: 0 });
   }
